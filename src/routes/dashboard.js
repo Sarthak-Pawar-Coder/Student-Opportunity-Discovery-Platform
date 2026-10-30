@@ -6,15 +6,16 @@ const { scoreOpportunity, rankOpportunitiesForUser } = require('../services/reco
 const { analyzeSkillGaps } = require('../services/skillGapAdvisor');
 
 // GET & POST /dashboard (handles redirects from POST forms cleanly)
-router.all('/dashboard', requireAuth, (req, res) => {
-
+router.all('/dashboard', requireAuth, async (req, res) => {
   const db = getDb();
   const user = res.locals.currentUser;
 
   // Fetch all active opportunities
-  const rawOpps = db.prepare("SELECT * FROM opportunities WHERE deadline >= DATE('now')").all();
+  const rawOppsRes = await db.execute("SELECT * FROM opportunities WHERE deadline >= DATE('now')");
+  const rawOpps = rawOppsRes.rows;
 
-  const allOpps = rawOpps.map(opp => {
+  const allOpps = rawOpps.map(rawOpp => {
+    const opp = { ...rawOpp };
     try { opp.required_skills = JSON.parse(opp.required_skills || '[]'); } catch (e) { opp.required_skills = []; }
     try { opp.tags = JSON.parse(opp.tags || '[]'); } catch (e) { opp.tags = []; }
     return opp;
@@ -27,13 +28,18 @@ router.all('/dashboard', requireAuth, (req, res) => {
   const topRecommendations = rankedOpps.slice(0, 6);
 
   // Stat metrics
-  const totalBookmarks = db.prepare("SELECT COUNT(*) as count FROM bookmarks WHERE user_id = ?").get(user.id).count;
+  const totalBookmarksRes = await db.execute({
+    sql: "SELECT COUNT(*) as count FROM bookmarks WHERE user_id = ?",
+    args: [user.id]
+  });
+  const totalBookmarks = totalBookmarksRes.rows[0] ? Number(totalBookmarksRes.rows[0].count) : 0;
   
-  const closingSoonCount = db.prepare(`
+  const closingSoonRes = await db.execute(`
     SELECT COUNT(*) as count 
     FROM opportunities 
     WHERE deadline >= DATE('now') AND deadline <= DATE('now', '+7 days')
-  `).get().count;
+  `);
+  const closingSoonCount = closingSoonRes.rows[0] ? Number(closingSoonRes.rows[0].count) : 0;
 
   // Compute Skill Gap Advisor (⭐ WOW Feature 1)
   const skillGapAnalysis = analyzeSkillGaps(user, allOpps);
@@ -41,13 +47,14 @@ router.all('/dashboard', requireAuth, (req, res) => {
   // Save/cache top missing skill to skill_gap_cache table
   if (skillGapAnalysis && skillGapAnalysis.topSkill) {
     try {
-      db.prepare(`
-        INSERT INTO skill_gap_cache (user_id, missing_skill, frequency_count, updated_at)
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(user_id, missing_skill) DO UPDATE SET
-          frequency_count = excluded.frequency_count,
-          updated_at = CURRENT_TIMESTAMP
-      `).run(user.id, skillGapAnalysis.topSkill, skillGapAnalysis.unlockedCount);
+      await db.execute({
+        sql: `INSERT INTO skill_gap_cache (user_id, missing_skill, frequency_count, updated_at)
+              VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+              ON CONFLICT(user_id, missing_skill) DO UPDATE SET
+                frequency_count = excluded.frequency_count,
+                updated_at = CURRENT_TIMESTAMP`,
+        args: [user.id, skillGapAnalysis.topSkill, skillGapAnalysis.unlockedCount]
+      });
     } catch (e) {
       console.error('Error caching skill gap:', e.message);
     }

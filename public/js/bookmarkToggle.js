@@ -32,18 +32,22 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (data.bookmarked) {
           btn.classList.add('bg-indigo-600', 'text-white');
-          btn.classList.remove('bg-gray-100', 'text-gray-700', 'hover:bg-gray-200');
+          btn.classList.remove('bg-slate-800', 'text-slate-300', 'text-slate-200', 'hover:bg-slate-700', 'bg-gray-100', 'text-gray-700', 'hover:bg-gray-200');
           if (icon) {
-            icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" fill="currentColor"/>`;
+            icon.setAttribute('fill', 'currentColor');
           }
-          if (text) text.textContent = 'Saved';
+          if (text) {
+            text.textContent = text.textContent.includes('Bookmark') && text.textContent.length > 8 ? 'Saved to Bookmarks' : 'Saved';
+          }
         } else {
           btn.classList.remove('bg-indigo-600', 'text-white');
-          btn.classList.add('bg-gray-100', 'text-gray-700', 'hover:bg-gray-200');
+          btn.classList.add('bg-slate-800', 'text-slate-300', 'hover:bg-slate-700');
           if (icon) {
-            icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" fill="none"/>`;
+            icon.setAttribute('fill', 'none');
           }
-          if (text) text.textContent = 'Bookmark';
+          if (text) {
+            text.textContent = text.textContent.includes('Saved') && text.textContent.length > 5 ? 'Bookmark' : 'Save';
+          }
         }
 
         // Update badge counters if present

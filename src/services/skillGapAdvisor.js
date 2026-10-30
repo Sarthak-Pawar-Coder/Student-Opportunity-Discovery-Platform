@@ -6,10 +6,17 @@
 const { scoreOpportunity } = require('./recommendationEngine');
 
 function analyzeSkillGaps(user, allOpportunities) {
+  if (!user || !Array.isArray(allOpportunities) || allOpportunities.length === 0) {
+    return null;
+  }
+
   let userSkills = [];
   try {
     userSkills = typeof user.skills === 'string' ? JSON.parse(user.skills) : (user.skills || []);
   } catch (e) {
+    userSkills = [];
+  }
+  if (!Array.isArray(userSkills)) {
     userSkills = [];
   }
 
@@ -108,7 +115,8 @@ function analyzeSkillGaps(user, allOpportunities) {
     topSkill: topGap.skill,
     unlockedCount: topGap.unlockedCount,
     sampleOpportunities: topGap.sampleOpportunities,
-    recommendations: skillAnalysis.slice(0, 3)
+    recommendations: skillAnalysis.slice(0, 8),
+    allGaps: skillAnalysis.slice(0, 8)
   };
 }
 

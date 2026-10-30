@@ -62,7 +62,7 @@ app.use(errorHandler);
 async function startServer() {
   try {
     await initDatabase();
-    seedDatabase();
+    await seedDatabase();
     app.listen(PORT, () => {
       console.log(`🚀 OpportuNest server successfully listening on http://localhost:${PORT}`);
     });
@@ -77,4 +77,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-

@@ -59,15 +59,23 @@ document.addEventListener('DOMContentLoaded', () => {
       activeCard.classList.add('swipe-right');
       showToast(`Saved to Bookmarks! ⭐`, 'success');
 
-      // Trigger AJAX bookmark
+      // Trigger AJAX bookmark with action 'save' so existing bookmarks aren't removed
       try {
-        await fetch(`/opportunities/${oppId}/bookmark`, {
+        const res = await fetch(`/opportunities/${oppId}/bookmark`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
-          }
+          },
+          body: JSON.stringify({ action: 'save' })
         });
+        const data = await res.json();
+        if (data && typeof data.bookmarkCount !== 'undefined') {
+          const counterBadges = document.querySelectorAll('.bookmark-count-badge');
+          counterBadges.forEach(badge => {
+            badge.textContent = data.bookmarkCount;
+          });
+        }
       } catch (e) {
         console.error('Auto-bookmark on swipe right failed:', e);
       }
@@ -100,6 +108,49 @@ document.addEventListener('DOMContentLoaded', () => {
       handleSwipe('left');
     } else if (e.key === 'ArrowRight') {
       handleSwipe('right');
+    }
+  });
+
+  // Touch & Pointer Gesture Support (True mobile swipe)
+  let startX = 0;
+  let startY = 0;
+  let currentX = 0;
+  let isDragging = false;
+
+  deckContainer.addEventListener('pointerdown', (e) => {
+    const card = getCurrentCard();
+    if (!card) return;
+    startX = e.clientX;
+    startY = e.clientY;
+    currentX = startX;
+    isDragging = true;
+    card.style.transition = 'none';
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    const card = getCurrentCard();
+    if (!card) return;
+    currentX = e.clientX;
+    const deltaX = currentX - startX;
+    const rotate = deltaX * 0.08;
+    card.style.transform = `translateX(${deltaX}px) rotate(${rotate}deg)`;
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    const card = getCurrentCard();
+    if (!card) return;
+    const deltaX = currentX - startX;
+    card.style.transition = 'transform 0.35s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.35s ease';
+
+    if (deltaX > 80) {
+      handleSwipe('right');
+    } else if (deltaX < -80) {
+      handleSwipe('left');
+    } else {
+      card.style.transform = '';
     }
   });
 

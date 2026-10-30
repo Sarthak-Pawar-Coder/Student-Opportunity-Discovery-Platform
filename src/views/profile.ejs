@@ -77,6 +77,26 @@
           </span>
         <% }) %>
       </div>
+
+      <!-- Quick Add Recommended Skills from Skill Gap Advisor -->
+      <% if (typeof skillGapAnalysis !== 'undefined' && skillGapAnalysis && skillGapAnalysis.recommendations && skillGapAnalysis.recommendations.length > 0) { %>
+        <div class="mt-4 p-4 bg-purple-950/40 border border-purple-800/60 rounded-2xl space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-extrabold text-amber-300 uppercase tracking-wider flex items-center space-x-1.5">
+              <span>🧠 Recommended Skills to Unlock Opportunities</span>
+            </span>
+            <span class="text-[11px] text-slate-400">Click to append to your skills</span>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <% skillGapAnalysis.recommendations.forEach(gap => { %>
+              <button type="button" onclick="addSkillToInput('<%= gap.skill %>')" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-purple-900/80 text-purple-200 border border-purple-700/60 transition-all duration-200 hover:scale-105 active:scale-95 flex items-center space-x-1.5 shadow-sm focus:outline-none" title="Click to add <%= gap.skill %> to input">
+                <span>+ <%= gap.skill %></span>
+                <span class="px-1.5 py-0.2 rounded-md bg-emerald-950 text-emerald-300 text-[10px] font-bold">+<%= gap.unlockedCount %> Opps</span>
+              </button>
+            <% }) %>
+          </div>
+        </div>
+      <% } %>
     </div>
 
     <!-- Section 3: Interests & Preferred Tags -->
@@ -133,5 +153,18 @@
 
   </form>
 </div>
+
+<script>
+function addSkillToInput(skillName) {
+  const input = document.getElementById('skills');
+  if (!input) return;
+  const current = input.value.split(',').map(s => s.trim()).filter(Boolean);
+  if (!current.some(s => s.toLowerCase() === skillName.toLowerCase())) {
+    current.push(skillName);
+    input.value = current.join(', ');
+    input.focus();
+  }
+}
+</script>
 
 <%- include('partials/footer') %>

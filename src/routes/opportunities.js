@@ -5,7 +5,7 @@ const { requireAuth } = require('../middleware/auth');
 const { scoreOpportunity } = require('../services/recommendationEngine');
 
 // GET /opportunities
-router.get('/opportunities', (req, res) => {
+router.get('/opportunities', async (req, res) => {
   const db = getDb();
   const { search, category, location, deadline, skill, sort } = req.query;
 
@@ -19,7 +19,7 @@ router.get('/opportunities', (req, res) => {
   }
 
   if (category && category.trim() && category !== 'all') {
-    query += " AND category = ?";
+    query += " AND LOWER(category) = ?";
     params.push(category.trim().toLowerCase());
   }
 
@@ -55,19 +55,22 @@ router.get('/opportunities', (req, res) => {
     }
   }
 
-  const rawOpportunities = db.prepare(query).all(params);
+  const rawOpportunitiesRes = await db.execute({ sql: query, args: params });
+  const rawOpportunities = rawOpportunitiesRes.rows;
 
   // Parse JSON fields
-  let opportunities = rawOpportunities.map(opp => {
+  let opportunities = rawOpportunities.map(rawOpp => {
+    const opp = { ...rawOpp };
     let reqSkills = [];
     let tags = [];
     try { reqSkills = JSON.parse(opp.required_skills || '[]'); } catch (e) { reqSkills = []; }
     try { tags = JSON.parse(opp.tags || '[]'); } catch (e) { tags = []; }
 
-    // Calculate days remaining
-    const deadlineDate = new Date(opp.deadline);
+    // Calculate days remaining (using end of day so current date is not expired prematurely)
+    const deadlineDate = new Date(opp.deadline + 'T23:59:59');
     const diffTime = deadlineDate - now;
-    const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    const isExpired = diffTime < 0;
 
     let matchDetails = null;
     let matchScore = 0;
@@ -82,7 +85,7 @@ router.get('/opportunities', (req, res) => {
       required_skills: reqSkills,
       tags,
       daysRemaining,
-      isExpired: daysRemaining < 0,
+      isExpired,
       matchDetails,
       matchScore
     };
@@ -102,13 +105,14 @@ router.get('/opportunities', (req, res) => {
   if (sortBy === 'deadline') {
     opportunities.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
   } else if (sortBy === 'relevance' && res.locals.currentUser) {
-    opportunities.sort((a, b) => b.matchScore - a.matchScore);
+    opportunities.sort((a, b) => (b.matchScore - a.matchScore) || (new Date(a.deadline) - new Date(b.deadline)));
   } else if (sortBy === 'newest') {
     opportunities.sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at));
   }
 
   // Get list of all available unique skills for filter dropdown
-  const allOpps = db.prepare("SELECT required_skills FROM opportunities").all();
+  const allOppsRes = await db.execute("SELECT required_skills FROM opportunities");
+  const allOpps = allOppsRes.rows;
   const allSkillsSet = new Set();
   allOpps.forEach(o => {
     try {
@@ -134,25 +138,30 @@ router.get('/opportunities', (req, res) => {
 });
 
 // GET /opportunities/:id
-router.get('/opportunities/:id', (req, res) => {
+router.get('/opportunities/:id', async (req, res) => {
   const db = getDb();
-  const opp = db.prepare("SELECT * FROM opportunities WHERE id = ?").get(req.params.id);
+  const oppRes = await db.execute({
+    sql: "SELECT * FROM opportunities WHERE id = ?",
+    args: [req.params.id]
+  });
+  const rawOpp = oppRes.rows[0];
 
-  if (!opp) {
+  if (!rawOpp) {
     return res.status(404).render('index', {
       error: 'Opportunity not found.',
       pageTitle: 'Not Found - OpportuNest'
     });
   }
 
+  const opp = { ...rawOpp };
   try { opp.required_skills = JSON.parse(opp.required_skills || '[]'); } catch (e) { opp.required_skills = []; }
   try { opp.tags = JSON.parse(opp.tags || '[]'); } catch (e) { opp.tags = []; }
 
   const now = new Date();
-  const deadlineDate = new Date(opp.deadline);
+  const deadlineDate = new Date(opp.deadline + 'T23:59:59');
   const diffTime = deadlineDate - now;
-  opp.daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  opp.isExpired = opp.daysRemaining < 0;
+  opp.daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+  opp.isExpired = diffTime < 0;
 
   let matchDetails = null;
   if (res.locals.currentUser) {
@@ -161,80 +170,157 @@ router.get('/opportunities/:id', (req, res) => {
 
   const isBookmarked = res.locals.userBookmarkIds.has(opp.id);
 
+  let hasApplied = false;
+  if (res.locals.currentUser) {
+    const appRes = await db.execute({
+      sql: "SELECT id FROM applications WHERE user_id = ? AND opportunity_id = ?",
+      args: [res.locals.currentUser.id, opp.id]
+    });
+    hasApplied = !!appRes.rows[0];
+  }
+
   // Fetch 3 related opportunities in same category
-  const relatedRaw = db.prepare("SELECT * FROM opportunities WHERE category = ? AND id != ? LIMIT 3").all(opp.category, opp.id);
-  const related = relatedRaw.map(r => {
-    try { r.required_skills = JSON.parse(r.required_skills || '[]'); } catch (e) { r.required_skills = []; }
-    return r;
+  const relatedRes = await db.execute({
+    sql: "SELECT * FROM opportunities WHERE category = ? AND id != ? LIMIT 3",
+    args: [opp.category, opp.id]
+  });
+  const related = relatedRes.rows.map(r => {
+    const item = { ...r };
+    try { item.required_skills = JSON.parse(item.required_skills || '[]'); } catch (e) { item.required_skills = []; }
+    try { item.tags = JSON.parse(item.tags || '[]'); } catch (e) { item.tags = []; }
+    return item;
   });
 
   res.render('detail', {
     opportunity: opp,
     matchDetails,
     isBookmarked,
+    hasApplied,
     related,
     pageTitle: `${opp.title} - OpportuNest`
   });
 });
 
 // GET /opportunities/:id/apply - Application Gateway & Direct Submission
-router.get('/opportunities/:id/apply', (req, res) => {
+router.get('/opportunities/:id/apply', async (req, res) => {
   const db = getDb();
-  const opp = db.prepare("SELECT * FROM opportunities WHERE id = ?").get(req.params.id);
+  const oppRes = await db.execute({
+    sql: "SELECT * FROM opportunities WHERE id = ?",
+    args: [req.params.id]
+  });
+  const rawOpp = oppRes.rows[0];
 
-  if (!opp) {
+  if (!rawOpp) {
     return res.status(404).render('index', {
       error: 'Opportunity not found.',
       pageTitle: 'Not Found - OpportuNest'
     });
   }
 
+  const opp = { ...rawOpp };
   try { opp.required_skills = JSON.parse(opp.required_skills || '[]'); } catch (e) { opp.required_skills = []; }
   try { opp.tags = JSON.parse(opp.tags || '[]'); } catch (e) { opp.tags = []; }
 
   const now = new Date();
-  const deadlineDate = new Date(opp.deadline);
+  const deadlineDate = new Date(opp.deadline + 'T23:59:59');
   const diffTime = deadlineDate - now;
-  opp.daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  opp.isExpired = opp.daysRemaining < 0;
+  opp.daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+  opp.isExpired = diffTime < 0;
 
   let matchDetails = null;
   if (res.locals.currentUser) {
     matchDetails = scoreOpportunity(res.locals.currentUser, opp);
   }
 
+  let hasApplied = false;
+  if (res.locals.currentUser) {
+    const appRes = await db.execute({
+      sql: "SELECT id FROM applications WHERE user_id = ? AND opportunity_id = ?",
+      args: [res.locals.currentUser.id, opp.id]
+    });
+    hasApplied = !!appRes.rows[0];
+  }
+
   res.render('apply', {
     opportunity: opp,
     matchDetails,
+    hasApplied,
     submitted: req.query.submitted === 'true',
     pageTitle: `Apply for ${opp.title} - OpportuNest`
   });
 });
 
 // POST /opportunities/:id/apply - Process Application Submission
-router.post('/opportunities/:id/apply', requireAuth, (req, res) => {
-  const opportunityId = parseInt(req.params.id, 10);
-  res.redirect(`/opportunities/${opportunityId}/apply?submitted=true`);
-});
-
-// POST /opportunities/:id/bookmark
-router.post('/opportunities/:id/bookmark', requireAuth, (req, res) => {
+router.post('/opportunities/:id/apply', requireAuth, async (req, res) => {
   const opportunityId = parseInt(req.params.id, 10);
   const userId = req.session.user.id;
   const db = getDb();
 
-  const existing = db.prepare("SELECT id FROM bookmarks WHERE user_id = ? AND opportunity_id = ?").get(userId, opportunityId);
-
-  let bookmarked = false;
-  if (existing) {
-    db.prepare("DELETE FROM bookmarks WHERE id = ?").run(existing.id);
-    bookmarked = false;
-  } else {
-    db.prepare("INSERT INTO bookmarks (user_id, opportunity_id) VALUES (?, ?)").run(userId, opportunityId);
-    bookmarked = true;
+  try {
+    await db.execute({
+      sql: `INSERT INTO applications (user_id, opportunity_id, status)
+            VALUES (?, ?, 'In Review')
+            ON CONFLICT(user_id, opportunity_id) DO UPDATE SET applied_at = CURRENT_TIMESTAMP`,
+      args: [userId, opportunityId]
+    });
+  } catch (err) {
+    console.error('Error recording application submission:', err.message);
   }
 
-  const bookmarkCount = db.prepare("SELECT COUNT(*) as count FROM bookmarks WHERE user_id = ?").get(userId).count;
+  res.redirect(`/opportunities/${opportunityId}/apply?submitted=true`);
+});
+
+// POST /opportunities/:id/bookmark
+router.post('/opportunities/:id/bookmark', requireAuth, async (req, res) => {
+  const opportunityId = parseInt(req.params.id, 10);
+  const userId = req.session.user.id;
+  const db = getDb();
+  const action = req.body && req.body.action; // 'save' | 'unsave' | 'toggle'
+
+  const existingRes = await db.execute({
+    sql: "SELECT id FROM bookmarks WHERE user_id = ? AND opportunity_id = ?",
+    args: [userId, opportunityId]
+  });
+  const existing = existingRes.rows[0];
+
+  let bookmarked = false;
+  if (action === 'save') {
+    if (!existing) {
+      await db.execute({
+        sql: "INSERT INTO bookmarks (user_id, opportunity_id) VALUES (?, ?)",
+        args: [userId, opportunityId]
+      });
+    }
+    bookmarked = true;
+  } else if (action === 'unsave') {
+    if (existing) {
+      await db.execute({
+        sql: "DELETE FROM bookmarks WHERE id = ?",
+        args: [existing.id]
+      });
+    }
+    bookmarked = false;
+  } else {
+    if (existing) {
+      await db.execute({
+        sql: "DELETE FROM bookmarks WHERE id = ?",
+        args: [existing.id]
+      });
+      bookmarked = false;
+    } else {
+      await db.execute({
+        sql: "INSERT INTO bookmarks (user_id, opportunity_id) VALUES (?, ?)",
+        args: [userId, opportunityId]
+      });
+      bookmarked = true;
+    }
+  }
+
+  const bmCountRes = await db.execute({
+    sql: "SELECT COUNT(*) as count FROM bookmarks WHERE user_id = ?",
+    args: [userId]
+  });
+  const bookmarkCount = bmCountRes.rows[0] ? Number(bmCountRes.rows[0].count) : 0;
 
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.json({ success: true, bookmarked, bookmarkCount, opportunityId });
@@ -244,20 +330,23 @@ router.post('/opportunities/:id/bookmark', requireAuth, (req, res) => {
 });
 
 // GET /bookmarks
-router.get('/bookmarks', requireAuth, (req, res) => {
+router.get('/bookmarks', requireAuth, async (req, res) => {
   const db = getDb();
   const userId = req.session.user.id;
 
-  const rawBookmarks = db.prepare(`
-    SELECT o.*, b.created_at as bookmarked_at
-    FROM bookmarks b
-    JOIN opportunities o ON b.opportunity_id = o.id
-    WHERE b.user_id = ?
-    ORDER BY b.created_at DESC
-  `).all(userId);
+  const rawBookmarksRes = await db.execute({
+    sql: `SELECT o.*, b.created_at as bookmarked_at
+          FROM bookmarks b
+          JOIN opportunities o ON b.opportunity_id = o.id
+          WHERE b.user_id = ?
+          ORDER BY b.created_at DESC`,
+    args: [userId]
+  });
+  const rawBookmarks = rawBookmarksRes.rows;
 
   const now = new Date();
-  const bookmarks = rawBookmarks.map(opp => {
+  const bookmarks = rawBookmarks.map(rawOpp => {
+    const opp = { ...rawOpp };
     try { opp.required_skills = JSON.parse(opp.required_skills || '[]'); } catch (e) { opp.required_skills = []; }
     try { opp.tags = JSON.parse(opp.tags || '[]'); } catch (e) { opp.tags = []; }
 

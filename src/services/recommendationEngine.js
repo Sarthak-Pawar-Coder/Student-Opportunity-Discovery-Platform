@@ -4,6 +4,18 @@
  */
 
 function scoreOpportunity(user, opportunity) {
+  if (!user || !opportunity) {
+    return {
+      score: 0,
+      matchedSkills: [],
+      matchedInterests: [],
+      eligibilityMatched: false,
+      daysRemaining: 0,
+      reasons: [],
+      summaryChip: 'No match'
+    };
+  }
+
   let userSkills = [];
   let userInterests = [];
   let userCategories = [];
@@ -52,7 +64,8 @@ function scoreOpportunity(user, opportunity) {
       matchedInterests.push(tag);
     }
   }
-  if (userCategoriesLower.includes(opportunity.category.toLowerCase().trim())) {
+  const oppCategoryLower = (opportunity.category || '').toLowerCase().trim();
+  if (oppCategoryLower && userCategoriesLower.includes(oppCategoryLower)) {
     if (!matchedInterests.includes(`Category: ${opportunity.category}`)) {
       matchedInterests.push(`Category: ${opportunity.category}`);
     }
@@ -66,9 +79,9 @@ function scoreOpportunity(user, opportunity) {
   let eligibilityScore = 0;
   let eligibilityMatched = false;
   if (opportunity.eligibility) {
-    const oppEligLower = opportunity.eligibility.toLowerCase();
+    const oppEligLower = String(opportunity.eligibility).toLowerCase();
     const userEduLower = (user.education_level || '').toLowerCase();
-    if (oppEligLower.includes('all') || oppEligLower.includes(userEduLower) || userEduLower.includes(oppEligLower)) {
+    if (oppEligLower.includes('all') || (userEduLower && oppEligLower.includes(userEduLower)) || (userEduLower && userEduLower.includes(oppEligLower))) {
       eligibilityScore = 1;
       eligibilityMatched = true;
       reasons.push(`+1 for matching education level (${user.education_level || 'Student'})`);
@@ -79,14 +92,14 @@ function scoreOpportunity(user, opportunity) {
   let daysRemaining = null;
   if (opportunity.deadline) {
     const now = new Date();
-    const deadlineDate = new Date(opportunity.deadline);
+    const deadlineDate = new Date(opportunity.deadline + 'T23:59:59');
     const diffTime = deadlineDate - now;
-    daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-    if (daysRemaining >= 0 && daysRemaining <= 14) {
+    if (diffTime >= 0 && daysRemaining <= 14) {
       urgencyScore = 2;
       reasons.push(`+2 urgency boost (closing in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'})`);
-    } else if (daysRemaining > 14 && daysRemaining <= 30) {
+    } else if (diffTime >= 0 && daysRemaining > 14 && daysRemaining <= 30) {
       urgencyScore = 1;
       reasons.push(`+1 urgency boost (closing in ${daysRemaining} days)`);
     }

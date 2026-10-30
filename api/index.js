@@ -8,7 +8,7 @@ async function ensureInitialized() {
   if (!initPromise) {
     initPromise = (async () => {
       await initDatabase();
-      seedDatabase();
+      await seedDatabase();
     })().catch(err => {
       initPromise = null;
       throw err;
@@ -26,4 +26,3 @@ module.exports = async (req, res) => {
   }
   return app(req, res);
 };
-

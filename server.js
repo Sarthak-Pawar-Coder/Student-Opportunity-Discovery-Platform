@@ -8,6 +8,10 @@
  * College: Zeal College of Engineering and Research, Pune
  */
 
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 require('dotenv').config();
 const app = require('./src/app');
 const { initDatabase } = require('./src/config/database');
@@ -19,7 +23,7 @@ async function start() {
   try {
     console.log('🔄 Initializing database and loading data...');
     await initDatabase();
-    seedDatabase();
+    await seedDatabase();
     app.listen(PORT, () => {
       console.log(`=======================================================`);
       console.log(`🚀 OpportuNest Server running on: http://localhost:${PORT}`);

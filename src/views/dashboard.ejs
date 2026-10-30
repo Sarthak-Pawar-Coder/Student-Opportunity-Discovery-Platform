@@ -98,15 +98,24 @@
 
   <!-- ⭐ WOW FEATURE — Skill Gap Advisor Banner Card -->
   <% if (skillGapAnalysis) { %>
-    <div class="bg-gradient-to-r from-indigo-900 via-purple-900 to-slate-900 text-white rounded-3xl shadow-2xl shadow-indigo-950/50 relative overflow-hidden border border-indigo-500/40 p-6 sm:p-8">
+    <div id="skill-gap-banner" class="bg-gradient-to-r from-indigo-900 via-purple-900 to-slate-900 text-white rounded-3xl shadow-2xl shadow-indigo-950/50 relative overflow-hidden border border-indigo-500/40 p-6 sm:p-8 transition-all duration-300">
       
       <!-- Decorative glow -->
       <div class="absolute -right-10 -bottom-10 w-48 h-48 bg-purple-500/20 rounded-full blur-2xl pointer-events-none"></div>
 
-      <div class="flex items-center space-x-2 text-xs font-extrabold text-amber-300 uppercase tracking-widest mb-3 relative z-10">
-        <span class="px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/40">Skill Gap Advisor</span>
-        <span>&bull;</span>
-        <span>Actionable Career Guidance</span>
+      <!-- Header row with Dismiss Button -->
+      <div class="flex items-center justify-between mb-3 relative z-10">
+        <div class="flex items-center space-x-2 text-xs font-extrabold text-amber-300 uppercase tracking-widest">
+          <span class="px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/40">Skill Gap Advisor</span>
+          <span>&bull;</span>
+          <span>Actionable Career Guidance</span>
+        </div>
+
+        <button type="button" id="dismiss-advisor-btn" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400/40" title="Dismiss Skill Gap Advisor">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
       <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
@@ -121,16 +130,74 @@
         </div>
 
         <div class="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto shrink-0">
-          <form action="/profile/add-skill" method="POST" class="w-full sm:w-auto">
+          <form action="/profile/add-skill" method="POST" class="add-skill-ajax-form w-full sm:w-auto" data-skill="<%= skillGapAnalysis.topSkill %>">
             <input type="hidden" name="skill" value="<%= skillGapAnalysis.topSkill %>">
-            <button type="submit" class="bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold px-6 py-3 rounded-xl shadow-lg hover:shadow-amber-400/30 transition-all duration-200 hover:scale-105 active:scale-95 flex items-center justify-center space-x-2 w-full sm:w-auto focus:outline-none">
+            <button type="submit" class="add-skill-btn bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold px-6 py-3 rounded-xl shadow-lg hover:shadow-amber-400/30 transition-all duration-200 hover:scale-105 active:scale-95 flex items-center justify-center space-x-2 w-full sm:w-auto focus:outline-none">
               <span>+ Add "<%= skillGapAnalysis.topSkill %>" to Profile</span>
             </button>
           </form>
-          <a href="/profile" class="w-full sm:w-auto px-6 py-3 bg-slate-800/80 hover:bg-slate-700 text-white font-bold text-sm rounded-xl border border-slate-700 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none">
-            View All Gaps &rarr;
-          </a>
+          <button type="button" id="btn-open-gaps-modal" class="w-full sm:w-auto px-6 py-3 bg-slate-800/80 hover:bg-slate-700 text-white font-bold text-sm rounded-xl border border-slate-700 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none flex items-center justify-center space-x-1.5">
+            <span>View All Gaps (<%= (skillGapAnalysis.recommendations || []).length %>)</span>
+            <span>&rarr;</span>
+          </button>
         </div>
+      </div>
+    </div>
+
+    <!-- ⭐ Dedicated Interactive Modal: All Identified Skill Gaps -->
+    <div id="skill-gaps-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+      <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col p-6 sm:p-8 space-y-6 relative">
+        
+        <!-- Modal Header -->
+        <div class="flex items-start justify-between border-b border-slate-800 pb-4">
+          <div class="space-y-1">
+            <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-purple-950/80 text-purple-300 text-xs font-extrabold border border-purple-800">
+              <span>🧠 Skill Gap Intelligence</span>
+            </div>
+            <h2 class="text-2xl font-black text-white">Top Recommended Skills to Unlock Opportunities</h2>
+            <p class="text-xs text-slate-400">These skills are missing from your profile but are actively required by the highest volume of live opportunities.</p>
+          </div>
+          <button type="button" id="btn-close-gaps-modal" class="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors focus:outline-none" title="Close Modal">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Skill Cards Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <% (skillGapAnalysis.recommendations || []).forEach(gap => { %>
+            <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3 hover:border-indigo-500/50 transition-colors">
+              <div>
+                <div class="flex items-center justify-between">
+                  <span class="text-base font-extrabold text-amber-300"><%= gap.skill %></span>
+                  <span class="px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-800 text-emerald-300 font-bold text-xs">
+                    +<%= gap.unlockedCount %> Opps
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+                  Required by: <strong class="text-slate-200"><%= (gap.sampleOpportunities || []).slice(0, 2).join(', ') %></strong>
+                </p>
+              </div>
+
+              <form action="/profile/add-skill" method="POST" class="add-skill-ajax-form pt-2" data-skill="<%= gap.skill %>">
+                <input type="hidden" name="skill" value="<%= gap.skill %>">
+                <button type="submit" class="add-skill-btn w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all duration-200 hover:scale-[1.02] active:scale-95 flex items-center justify-center space-x-1.5 focus:outline-none">
+                  <span>+ Add "<%= gap.skill %>" to Profile</span>
+                </button>
+              </form>
+            </div>
+          <% }) %>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="flex items-center justify-between pt-4 border-t border-slate-800 text-xs">
+          <span class="text-slate-400">Click any skill to instantly add it to your profile and recalculate match scores.</span>
+          <button type="button" id="btn-close-gaps-modal-footer" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl transition-all">
+            Done
+          </button>
+        </div>
+
       </div>
     </div>
   <% } %>
@@ -360,5 +427,148 @@
   </div>
 
 </div>
+
+<!-- Client script for Skill Gap Advisor dismissal, modal & AJAX addition -->
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const banner = document.getElementById('skill-gap-banner');
+  const dismissBtn = document.getElementById('dismiss-advisor-btn');
+  const modal = document.getElementById('skill-gaps-modal');
+  const openModalBtn = document.getElementById('btn-open-gaps-modal');
+  const closeModalBtn = document.getElementById('btn-close-gaps-modal');
+  const closeModalFooterBtn = document.getElementById('btn-close-gaps-modal-footer');
+
+  // 1. Session-based dismissal of Skill Gap Advisor banner
+  if (banner) {
+    if (sessionStorage.getItem('dismissSkillGapAdvisor') === 'true') {
+      banner.style.display = 'none';
+    }
+
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', () => {
+        banner.style.opacity = '0';
+        banner.style.transform = 'scale(0.98)';
+        setTimeout(() => {
+          banner.style.display = 'none';
+          sessionStorage.setItem('dismissSkillGapAdvisor', 'true');
+        }, 200);
+      });
+    }
+  }
+
+  // 2. Interactive Modal Controls
+  function openModal() {
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    document.body.classList.add('overflow-hidden');
+  }
+
+  function closeModal() {
+    if (!modal) return;
+    modal.classList.add('hidden');
+    document.body.classList.remove('overflow-hidden');
+  }
+
+  if (openModalBtn) openModalBtn.addEventListener('click', openModal);
+  if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
+  if (closeModalFooterBtn) closeModalFooterBtn.addEventListener('click', closeModal);
+
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
+    });
+  }
+
+  // 3. Smooth AJAX Skill Addition
+  document.querySelectorAll('.add-skill-ajax-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector('.add-skill-btn') || form.querySelector('button[type="submit"]');
+      const skillInput = form.querySelector('input[name="skill"]');
+      const skillName = (skillInput ? skillInput.value : form.dataset.skill || '').trim();
+      if (!skillName) return;
+
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>Adding...</span>';
+      }
+
+      try {
+        const res = await fetch('/profile/add-skill', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json'
+          },
+          body: new URLSearchParams({ skill: skillName })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          if (btn) {
+            btn.classList.remove('bg-amber-400', 'hover:bg-amber-300', 'bg-indigo-600', 'hover:bg-indigo-500', 'text-slate-950');
+            btn.classList.add('bg-emerald-600', 'text-white', 'cursor-default');
+            btn.innerHTML = '<span>✓ Added to Profile</span>';
+          }
+
+          // Update any other buttons for the same skill in modal/banner
+          document.querySelectorAll(`.add-skill-ajax-form[data-skill="${skillName}"] .add-skill-btn`).forEach(otherBtn => {
+            otherBtn.disabled = true;
+            otherBtn.classList.remove('bg-amber-400', 'hover:bg-amber-300', 'bg-indigo-600', 'hover:bg-indigo-500', 'text-slate-950');
+            otherBtn.classList.add('bg-emerald-600', 'text-white', 'cursor-default');
+            otherBtn.innerHTML = '<span>✓ Added</span>';
+          });
+
+          // Smoothly update profile completion percentages if returned
+          if (data.completionPercentage) {
+            document.querySelectorAll('.profile-completion-pct').forEach(el => {
+              el.textContent = `${data.completionPercentage}%`;
+            });
+          }
+
+          // Show quick toast notification
+          showToast(`Successfully added "${skillName}"! Recalculating...`, 'success');
+
+          // If added from main banner, hide banner smoothly after a moment so it doesn't repeatedly prompt
+          if (form.closest('#skill-gap-banner')) {
+            setTimeout(() => {
+              banner.style.opacity = '0';
+              banner.style.transform = 'scale(0.98)';
+              setTimeout(() => {
+                banner.style.display = 'none';
+                sessionStorage.setItem('dismissSkillGapAdvisor', 'true');
+              }, 250);
+            }, 900);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to add skill via AJAX:', err);
+        form.submit(); // fallback to normal form submit
+      }
+    });
+  });
+
+  function showToast(msg, type = 'info') {
+    let toast = document.getElementById('dynamic-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'dynamic-toast';
+      toast.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 px-5 py-3 rounded-2xl text-white font-bold text-sm shadow-2xl transition-all duration-300 z-50 pointer-events-none opacity-0';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.className = `fixed bottom-6 left-1/2 transform -translate-x-1/2 px-5 py-3 rounded-2xl text-white font-bold text-sm shadow-2xl transition-all duration-300 z-50 pointer-events-none ${
+      type === 'success' ? 'bg-emerald-600 shadow-emerald-900/50' : 'bg-slate-800'
+    }`;
+    toast.classList.remove('opacity-0', 'pointer-events-none');
+    setTimeout(() => {
+      toast.classList.add('opacity-0', 'pointer-events-none');
+    }, 2200);
+  }
+});
+</script>
 
 <%- include('partials/footer') %>

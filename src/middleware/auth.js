@@ -1,6 +1,6 @@
 const { getDb } = require('../config/database');
 
-function attachUser(req, res, next) {
+async function attachUser(req, res, next) {
   let userId = null;
   if (req.session && req.session.user && req.session.user.id) {
     userId = req.session.user.id;
@@ -11,29 +11,39 @@ function attachUser(req, res, next) {
   if (userId) {
     try {
       const db = getDb();
-      const freshUser = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+      const userRes = await db.execute({
+        sql: "SELECT * FROM users WHERE id = ?",
+        args: [userId]
+      });
+      const freshUser = userRes.rows[0];
       if (freshUser) {
-        try { freshUser.skills = JSON.parse(freshUser.skills || '[]'); } catch (e) { freshUser.skills = []; }
-        try { freshUser.interests = JSON.parse(freshUser.interests || '[]'); } catch (e) { freshUser.interests = []; }
-        try { freshUser.preferred_categories = JSON.parse(freshUser.preferred_categories || '[]'); } catch (e) { freshUser.preferred_categories = []; }
+        const userObj = { ...freshUser };
+        try { userObj.skills = JSON.parse(userObj.skills || '[]'); } catch (e) { userObj.skills = []; }
+        try { userObj.interests = JSON.parse(userObj.interests || '[]'); } catch (e) { userObj.interests = []; }
+        try { userObj.preferred_categories = JSON.parse(userObj.preferred_categories || '[]'); } catch (e) { userObj.preferred_categories = []; }
+        
+        delete userObj.password_hash;
         
         let score = 0;
-        if (freshUser.name) score += 10;
-        if (freshUser.email) score += 10;
-        if (freshUser.education_level) score += 20;
-        if (freshUser.field_of_study) score += 20;
-        if (freshUser.skills && freshUser.skills.length > 0) score += 20;
-        if (freshUser.interests && freshUser.interests.length > 0) score += 10;
-        if (freshUser.preferred_categories && freshUser.preferred_categories.length > 0) score += 10;
-        freshUser.completionPercentage = Math.min(score, 100);
+        if (userObj.name) score += 10;
+        if (userObj.email) score += 10;
+        if (userObj.education_level) score += 20;
+        if (userObj.field_of_study) score += 20;
+        if (userObj.skills && userObj.skills.length > 0) score += 20;
+        if (userObj.interests && userObj.interests.length > 0) score += 10;
+        if (userObj.preferred_categories && userObj.preferred_categories.length > 0) score += 10;
+        userObj.completionPercentage = Math.min(score, 100);
 
         if (req.session) {
-          req.session.user = freshUser;
+          req.session.user = { id: userObj.id, name: userObj.name, email: userObj.email };
         }
-        res.locals.currentUser = freshUser;
+        res.locals.currentUser = userObj;
 
-        const userBookmarks = db.prepare("SELECT opportunity_id FROM bookmarks WHERE user_id = ?").all(freshUser.id);
-        res.locals.userBookmarkIds = new Set(userBookmarks.map(b => b.opportunity_id));
+        const bookmarksRes = await db.execute({
+          sql: "SELECT opportunity_id FROM bookmarks WHERE user_id = ?",
+          args: [userObj.id]
+        });
+        res.locals.userBookmarkIds = new Set(bookmarksRes.rows.map(b => b.opportunity_id));
         return next();
       }
     } catch (e) {
